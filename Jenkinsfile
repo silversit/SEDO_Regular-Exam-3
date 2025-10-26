@@ -1,13 +1,7 @@
 pipeline {
   agent any
-  options { timestamps(); ansiColor('xterm') }
-
-  triggers {
-    // If you set a GitHub webhook, enable this in the job:
-    githubPush()
-    // Or fallback polling:
-    // pollSCM('H/5 * * * *')
-  }
+  // Keep it simple: only timestamps (built-in). Remove ansiColor & empty triggers.
+  options { timestamps() }
 
   environment {
     DOTNET_CLI_TELEMETRY_OPTOUT = '1'
@@ -15,41 +9,45 @@ pipeline {
   }
 
   stages {
-    stage('Checkout (main only)') {
-      when { branch 'main' }
+    stage('Checkout') {
       steps {
-        // If you pasted the pipeline, we must manually checkout:
-        checkout([
-          $class: 'GitSCM',
-          branches: [[name: '*/main']],
-          userRemoteConfigs: [[
-            url: 'https://github.com/silversit/SEDO_Regular-Exam-3.git'
-            // If private: add credentialsId: 'YOUR_CREDS_ID'
-          ]]
-        ])
+        // Works because your job is "Pipeline script from SCM"
+        checkout scm
         bat 'if not exist %REPORT_DIR% mkdir %REPORT_DIR%'
       }
     }
 
-    stage('.NET Restore/Build/Test') {
-      when { branch 'main' }
+    stage('Restore') {
       steps {
-        bat '''
-          dotnet --info
-          dotnet restore
-          dotnet build --configuration Release --no-restore
+        bat 'dotnet --info'
+        bat 'dotnet restore'
+      }
+    }
 
+    stage('Build') {
+      steps {
+        bat 'dotnet build --configuration Release --no-restore'
+      }
+    }
+
+    stage('Test') {
+      steps {
+        // Produce TRX test results into reports/
+        bat '''
           dotnet test --configuration Release --no-build ^
             --logger "trx;LogFileName=test-results.trx" ^
             --results-directory %REPORT_DIR%
-
-          dotnet tool install -g trx2junit
+        '''
+        // Convert TRX -> JUnit XML so Jenkins can render test results
+        bat '''
+          dotnet tool update -g trx2junit
           set "PATH=%PATH%;%USERPROFILE%\\.dotnet\\tools"
           trx2junit %REPORT_DIR%\\*.trx
         '''
       }
       post {
         always {
+          // Publish JUnit XML if present, and archive all reports
           junit allowEmptyResults: true, testResults: 'reports\\**\\*.xml'
           archiveArtifacts artifacts: 'reports\\**', allowEmptyArchive: true
         }
@@ -58,7 +56,7 @@ pipeline {
   }
 
   post {
-    success { echo '✅ .NET build & tests passed on main.' }
+    success { echo '✅ .NET build & tests passed.' }
     failure { echo '❌ Build or tests failed.' }
   }
 }
