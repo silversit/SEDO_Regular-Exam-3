@@ -4,7 +4,7 @@ pipeline {
 
   triggers {
     // If you set a GitHub webhook, enable this in the job:
-    // githubPush()
+    githubPush()
     // Or fallback polling:
     // pollSCM('H/5 * * * *')
   }
